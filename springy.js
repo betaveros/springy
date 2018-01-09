@@ -47,6 +47,8 @@
 		this.nodeSet = {};
 		this.nodes = [];
 		this.edges = [];
+		this.horizontalGroups = [];
+		this.verticalGroups = [];
 		this.adjacency = {};
 
 		this.nextNodeId = 0;
@@ -143,6 +145,13 @@
 
 			this.newEdge(node1, node2, attr);
 		}
+	};
+
+	Graph.prototype.addHorizontalGroup = function(group) {
+		this.horizontalGroups.push(group);
+	};
+	Graph.prototype.addVerticalGroup = function(group) {
+		this.verticalGroups.push(group);
 	};
 
 	Graph.prototype.newNode = function(data) {
@@ -342,7 +351,7 @@
 	Layout.ForceDirected.prototype.point = function(node) {
 		if (!(node.id in this.nodePoints)) {
 			var mass = (node.data.mass !== undefined) ? node.data.mass : 1.0;
-			this.nodePoints[node.id] = new Layout.ForceDirected.Point(Vector.random(), mass);
+			this.nodePoints[node.id] = new Layout.ForceDirected.Point(Vector.pseudorandom(), mass);
 		}
 
 		return this.nodePoints[node.id];
@@ -446,6 +455,43 @@
 		});
 	};
 
+	Layout.ForceDirected.prototype.sortGroups = function() {
+		var t = this;
+		this.graph.verticalGroups.forEach(function(group){
+			var ys = group.map(function(node) { return t.point(node).p.y; });
+			ys.sort();
+			group.forEach(function(node, i) {
+				t.point(node).p = new Vector(t.point(node).p.x, ys[i]);
+			});
+		});
+		this.graph.horizontalGroups.forEach(function(group){
+			var xs = group.map(function(node) { return t.point(node).p.x; });
+			xs.sort();
+			group.forEach(function(node, i) {
+				t.point(node).p = new Vector(xs[i], t.point(node).p.y);
+			});
+		});
+  };
+
+	Layout.ForceDirected.prototype.averageGroupAttributes = function(key) {
+		var t = this;
+		this.graph.verticalGroups.forEach(function(group){
+			var horizontalTotal = 0;
+			group.forEach(function(node) { horizontalTotal += t.point(node)[key].x; });
+			horizontalTotal /= group.length;
+			group.forEach(function(node) {
+				t.point(node)[key] = new Vector(horizontalTotal, t.point(node)[key].y);
+			});
+		});
+		this.graph.horizontalGroups.forEach(function(group){
+			var verticalTotal = 0;
+			group.forEach(function(node) { verticalTotal += t.point(node)[key].y; });
+			verticalTotal /= group.length;
+			group.forEach(function(node) {
+				t.point(node)[key] = new Vector(t.point(node)[key].x, verticalTotal);
+			});
+		});
+	};
 
 	Layout.ForceDirected.prototype.updateVelocity = function(timestep) {
 		this.eachNode(function(node, point) {
@@ -525,11 +571,15 @@
 	}
 
 	Layout.ForceDirected.prototype.tick = function(timestep) {
+		this.sortGroups();
 		this.applyCoulombsLaw();
 		this.applyHookesLaw();
 		this.attractToCentre();
+		this.averageGroupAttributes('a');
 		this.updateVelocity(timestep);
+		this.averageGroupAttributes('v');
 		this.updatePosition(timestep);
+		this.averageGroupAttributes('p');
 	};
 
 	// Find the nearest point to a particular position
@@ -580,8 +630,14 @@
 		this.y = y;
 	};
 
-	Vector.random = function() {
-		return new Vector(10.0 * (Math.random() - 0.5), 10.0 * (Math.random() - 0.5));
+	// very dumb deterministic RNG
+	var pseudorandomIndex = 0;
+	Vector.pseudorandom = function() {
+		let x = (Math.cos(++pseudorandomIndex) * 9876);
+    x -= Math.floor(x);
+		let y = (Math.sin(++pseudorandomIndex) * 10234);
+    y -= Math.floor(y);
+		return new Vector(10.0 * (x - 0.5), 10.0 * (y - 0.5));
 	};
 
 	Vector.prototype.add = function(v2) {
